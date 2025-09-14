@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>El Virgo que Salta</title> <!-- 👈 Título de la pestaña -->
+    <style>
+        body {
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background: #000;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            border: 2px solid #000;
+            display: block;
+        }
+        #score {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 24px;
+            color: white;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px black;
+        }
+        #mainMenu, #gameOverMenu {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            background: rgba(0,0,0,0.7);
+            padding: 20px;
+            border-radius: 12px;
+            color: white;
+            display: none;
+        }
+        button {
+            margin-top: 10px;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            background: #28a745;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #218838;
+        }
+    </style>
+</head>
+<body>
+    <div id="score">0</div>
+    <div id="mainMenu">
+        <h1>Fantasma Saltarín</h1> <!-- 👈 Nombre del juego -->
+        <button onclick="startGame()">Jugar</button>
+        <br>
+        <button id="musicToggle">Música: ON</button>
+    </div>
+    <div id="gameOverMenu">
+        <h1>¡BANEADO!</h1>
+        <p id="finalScore"></p>
+        <p id="bestScore"></p>
+        <button onclick="restartGame()">Intentalo de vuelta</button>
+    </div>
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- 🎵 Música -->
+    <audio id="backgroundMusic" loop>
+        <source src="musica.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="jumpSound">
+        <source src="jump.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="hitSound">
+        <source src="hit.mp3" type="audio/mpeg">
+    </audio>
+
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+        const scoreElement = document.getElementById("score");
+        const mainMenu = document.getElementById("mainMenu");
+        const gameOverMenu = document.getElementById("gameOverMenu");
+        const finalScore = document.getElementById("finalScore");
+        const bestScoreEl = document.getElementById("bestScore");
+        const backgroundMusic = document.getElementById("backgroundMusic");
+        const jumpSound = document.getElementById("jumpSound");
+        const hitSound = document.getElementById("hitSound");
+        const musicToggle = document.getElementById("musicToggle");
+
+        canvas.width = 400;
+        canvas.height = 600;
+
+        let gameState = "menu";
+        let score = 0;
+        let bestScore = localStorage.getItem("flappyBestScore") || 0;
+        let musicEnabled = true;
+
+        // 👻 Imagen del personaje
+        const birdImg = new Image();
+        birdImg.src = "pajaro.png"; // Podés reemplazarlo por "fantasma.png"
+
+        // 🌄 Imagen del fondo
+        const bgImg = new Image();
+        bgImg.src = "fondo.jpg";
+
+        const bird = {
+            x: 80,
+            y: canvas.height / 2,
+            width: 34,
+            height: 24,
+            velocity: 0,
+            gravity: 0.5,
+            jumpForce: -6,
+            rotation: 0,
+            scale: 1.2
+        };
+
+        let pipes = [];
+
+        function startGame() {
+            gameState = "play";
+            score = 0;
+            pipes = [];
+            bird.y = canvas.height / 2;
+            bird.velocity = 0;
+            mainMenu.style.display = "none";
+            gameOverMenu.style.display = "none";
+
+            if (musicEnabled) {
+                backgroundMusic.volume = 0.5;
+                backgroundMusic.play();
+            }
+        }
+
+        function restartGame() {
+            startGame();
+        }
+
+        function gameOver() {
+            gameState = "over";
+            backgroundMusic.pause();
+            backgroundMusic.currentTime = 0;
+            hitSound.play();
+
+            finalScore.textContent = `Puntaje: ${score}`;
+            if (score > bestScore) {
+                bestScore = score;
+                localStorage.setItem("flappyBestScore", bestScore);
+            }
+            bestScoreEl.textContent = `Mejor puntaje: ${bestScore}`;
+            gameOverMenu.style.display = "block";
+        }
+
+        function drawBackground() {
+            ctx.drawImage(bgImg, 0, 0, canvas.width, canvas.height);
+        }
+
+        function drawBird() {
+            ctx.save();
+            ctx.translate(bird.x + bird.width/2, bird.y + bird.height/2);
+            bird.rotation = Math.min(Math.max(bird.velocity * 3, -30), 90) * Math.PI / 180;
+            ctx.rotate(bird.rotation);
+
+            ctx.drawImage(
+                birdImg,
+                -bird.width/2 * bird.scale,
+                -bird.height/2 * bird.scale,
+                bird.width * bird.scale,
+                bird.height * bird.scale
+            );
+
+            ctx.restore();
+        }
+
+        function drawPipes() {
+            pipes.forEach(pipe => {
+                let gradient = ctx.createLinearGradient(pipe.x, 0, pipe.x + pipe.width, 0);
+                gradient.addColorStop(0, "#2ecc71");
+                gradient.addColorStop(1, "#27ae60");
+                ctx.fillStyle = gradient;
+                ctx.strokeStyle = "#145a32";
+                ctx.lineWidth = 3;
+
+                ctx.fillRect(pipe.x, 0, pipe.width, pipe.top);
+                ctx.strokeRect(pipe.x, 0, pipe.width, pipe.top);
+
+                ctx.fillRect(pipe.x, canvas.height - pipe.bottom, pipe.width, pipe.bottom);
+                ctx.strokeRect(pipe.x, canvas.height - pipe.bottom, pipe.width, pipe.bottom);
+            });
+        }
+
+        function update() {
+            if (gameState !== "play") return;
+
+            bird.velocity += bird.gravity;
+            bird.y += bird.velocity;
+
+            if (bird.y + bird.height/2 >= canvas.height || bird.y - bird.height/2 <= 0) {
+                gameOver();
+            }
+
+            pipes.forEach((pipe, index) => {
+                pipe.x -= 2;
+
+                if (
+                    bird.x + bird.width/2 > pipe.x &&
+                    bird.x - bird.width/2 < pipe.x + pipe.width &&
+                    (bird.y - bird.height/2 < pipe.top || bird.y + bird.height/2 > canvas.height - pipe.bottom)
+                ) {
+                    gameOver();
+                }
+
+                if (!pipe.passed && pipe.x + pipe.width < bird.x) {
+                    score++;
+                    pipe.passed = true;
+                }
+
+                if (pipe.x + pipe.width < 0) {
+                    pipes.splice(index, 1);
+                }
+            });
+
+            if (pipes.length === 0 || pipes[pipes.length - 1].x < canvas.width - 200) {
+                let pipeHeight = Math.floor(Math.random() * (canvas.height - 200)) + 50;
+                let gap = 120;
+                pipes.push({
+                    x: canvas.width,
+                    width: 50,
+                    top: pipeHeight,
+                    bottom: canvas.height - pipeHeight - gap,
+                    passed: false
+                });
+            }
+
+            scoreElement.textContent = score;
+        }
+
+        function draw() {
+            drawBackground();
+            drawBird();
+            drawPipes();
+        }
+
+        function loop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            update();
+            draw();
+            requestAnimationFrame(loop);
+        }
+
+        // 🎮 Controles
+        document.addEventListener("keydown", e => {
+            if (e.code === "Space" && gameState === "play") {
+                bird.velocity = bird.jumpForce;
+                jumpSound.play();
+            }
+        });
+
+        document.addEventListener("mousedown", () => {
+            if (gameState === "play") {
+                bird.velocity = bird.jumpForce;
+                jumpSound.play();
+            }
+        });
+
+        document.addEventListener("touchstart", () => {
+            if (gameState === "play") {
+                bird.velocity = bird.jumpForce;
+                jumpSound.play();
+            }
+        });
+
+        musicToggle.addEventListener("click", () => {
+            musicEnabled = !musicEnabled;
+            musicToggle.textContent = musicEnabled ? "Música: ON" : "Música: OFF";
+        });
+
+        mainMenu.style.display = "block";
+        loop();
+    </script>
+</body>
+</html>
